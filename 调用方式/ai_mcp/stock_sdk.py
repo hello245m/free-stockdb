@@ -297,6 +297,87 @@ class StockDBClient:
 
         return merged_list
 
+    def _apply_fq_in_memory(self, code: str, records: List[Dict[str, Any]], fq_type: str) -> List[Dict[str, Any]]:
+        """
+        在内存中对 K 线记录（日K或分钟K）执行动态前复权（qfq）或后复权（hfq）折算
+        """
+        if not records or fq_type not in ('qfq', 'hfq'):
+            return records
+
+        # 1. 获取该股票的所有复权因子 (Key 格式: 复权:code:date)
+        try:
+            factor_keys = sorted(self.rd.keys(f"复权:{code}:*"), key=lambda x: str(x))
+        except Exception:
+            factor_keys = []
+
+        if not factor_keys:
+            return records
+
+        # 2. 构建除息日与累积因子的映射表
+        factors = {}
+        for k in factor_keys:
+            date_str = str(k).split(":")[-1]
+            try:
+                val = self.rd.get(str(k))
+                if val and "cum" in val:
+                    factors[date_str] = float(val["cum"])
+            except Exception:
+                pass
+
+        if not factors:
+            return records
+
+        # 前复权需要最新因子 F_latest
+        if fq_type == 'qfq':
+            latest_date = max(factors.keys())
+            f_latest = factors[latest_date]
+
+        decimals = 3 if code.startswith(('1', '5')) else 2
+        adjusted_records = []
+
+        for r in records:
+            # 分钟K线 date 是 14 位整数，如 20260629150000; 日K是 8 位，如 20260629
+            r_date_str = str(r.get('date', ''))[:8]
+            if not r_date_str:
+                adjusted_records.append(r)
+                continue
+
+            # 寻找该记录日期之前最邻近除权日的因子 F_current
+            # 即: 所有 <= r_date_str 的除权日中，日期最大的那一个
+            prev_dates = [d for d in factors.keys() if d <= r_date_str]
+            if prev_dates:
+                f_current = factors[max(prev_dates)]
+            else:
+                f_current = 1.0
+
+            # 根据复权类型计算折算比例
+            if fq_type == 'qfq':
+                # 前复权：价格除以 (F_latest / F_current)
+                ratio = f_latest / f_current
+            else:
+                # 后复权：价格乘以 F_current，相当于除以 (1 / F_current)
+                ratio = 1.0 / f_current
+
+            if abs(ratio - 1.0) < 1e-6:
+                adjusted_records.append(r)
+                continue
+
+            # 拷贝记录字典，避免直接修改底层数据库缓存的对象
+            try:
+                r_copy = r.copy()
+            except Exception:
+                r_copy = {k: v for k, v in r.items()}
+
+            for field in ['open', 'high', 'low', 'close', 'pre_close']:
+                if field in r_copy and r_copy[field] is not None:
+                    try:
+                        r_copy[field] = round(float(r_copy[field]) / ratio, decimals)
+                    except Exception:
+                        pass
+            adjusted_records.append(r_copy)
+
+        return adjusted_records
+
     # ================= 同步接口 =================
     def get_data(
         self,
@@ -307,7 +388,8 @@ class StockDBClient:
         fields: Optional[Union[str, List[str]]] = None,
         limit: Optional[int] = None,
         desc: bool = False,
-        as_df: bool = False
+        as_df: bool = False,
+        fq: Optional[str] = 'qfq'
     ) -> Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]], Any]:
         """
         同步获取 K 线数据（日K、分钟K、周K、月K）
@@ -344,6 +426,10 @@ class StockDBClient:
             
             # 剔除底层可能返回的 None 空值（例如无成交、停牌或缺失的分钟数据）
             records = [r for r in records if r is not None]
+            
+            # 在内存中执行动态前/后复权折算
+            if fq in ('qfq', 'hfq'):
+                records = self._apply_fq_in_memory(c, records, fq)
             
             # 运行合并逻辑
             if frequency in ('1w', '1M'):
@@ -386,7 +472,8 @@ class StockDBClient:
         fields: Optional[Union[str, List[str]]] = None,
         limit: Optional[int] = None,
         desc: bool = False,
-        as_df: bool = False
+        as_df: bool = False,
+        fq: Optional[str] = 'qfq'
     ) -> Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]], Any]:
         """
         异步获取 K 线数据（日K、分钟K、周K、月K）
@@ -422,6 +509,10 @@ class StockDBClient:
             
             # 剔除底层可能返回的 None 空值（例如无成交、停牌或缺失的分钟数据）
             records = [r for r in records if r is not None]
+            
+            # 在内存中执行动态前/后复权折算
+            if fq in ('qfq', 'hfq'):
+                records = self._apply_fq_in_memory(c, records, fq)
             
             if frequency in ('1w', '1M'):
                 records = self._merge_to_period(records, frequency)
