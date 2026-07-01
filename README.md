@@ -1,4 +1,4 @@
-![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83%E5%9B%BE.png)
+![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83%E5%9B%BE.png?x=11)
 
 
 **❤️ 日线+分钟线数据前复权，2000年到2026-07-01 最全历史+最新数据，含7000+股票**
