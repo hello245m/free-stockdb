@@ -368,7 +368,7 @@ class StockDBClient:
             except Exception:
                 r_copy = {k: v for k, v in r.items()}
 
-            for field in ['open', 'high', 'low', 'close', 'pre_close']:
+            for field in ['open', 'high', 'low', 'close']:
                 if field in r_copy and r_copy[field] is not None:
                     try:
                         r_copy[field] = round(float(r_copy[field]) / ratio, decimals)
