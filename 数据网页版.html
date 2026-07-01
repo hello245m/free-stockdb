@@ -60,7 +60,7 @@
 
     .toolbar {
       display: grid;
-      grid-template-columns: repeat(4, 180px) auto;
+      grid-template-columns: repeat(5, 170px) 1fr;
       gap: 12px;
       align-items: end;
       padding: 16px;
@@ -305,14 +305,23 @@
         </select>
       </label>
 
+      <label>
+        复权类型
+        <select id="fqSelect">
+          <option value="qfq">前复权</option>
+          <option value="hfq">后复权</option>
+          <option value="none">不复权</option>
+        </select>
+      </label>
+
       <div class="actions">
         <button id="readBtn">读取数据</button>
         <button id="exportBtn" class="secondary" disabled>导出 Excel/CSV</button>
-        <span id="dateHint" class="hint">输入代码加载提示。</span>
+        <span id="dateHint" class="hint" style="margin-left: 12px; font-size: 11px; line-height: 1.35; color: var(--muted); white-space: pre-line; display: inline-block; vertical-align: middle;">输入代码加载提示。</span>
       </div>
     </section>
 
-    <div id="message" class="message"></div>
+    <div id="message" class="message" style="margin: 6px 0;"></div>
 
     <section class="sheet">
       <div class="sheet-meta">
@@ -371,6 +380,7 @@
       start: document.getElementById("dateStart"),
       end: document.getElementById("dateEnd"),
       frequency: document.getElementById("frequencySelect"),
+      fq: document.getElementById("fqSelect"),
       read: document.getElementById("readBtn"),
       export: document.getElementById("exportBtn"),
       hint: document.getElementById("dateHint"),
@@ -587,7 +597,7 @@
         }
         const first = state.dates[0];
         const last = state.dates[state.dates.length - 1];
-        el.hint.textContent = `${code}：共 ${state.dates.length} 个交易日，${displayDate(first)} 至 ${displayDate(last)}。`;
+        el.hint.textContent = `个股: ${code}\n交易日: ${state.dates.length} 天\n区间: ${displayDate(last)} 至 ${displayDate(first)}`;
         setMessage(`${code} 日期加载完成。`, "ok");
       } catch (err) {
         state.dates = [];
@@ -670,6 +680,84 @@
       el.table.appendChild(table);
     }
 
+    // ================= 客户端动态复权折算算法 =================
+    function _applyFqInJs(data, rawFactors, fqMode) {
+      if (!data || data.length === 0) return data;
+
+      // 1. 克隆数据，防污染原始变量
+      let processedData = data.map(item => ({ ...item }));
+
+      // 2. 如果不是不复权，先执行除 pre_close 以外的价格字段的复权折算
+      if (fqMode !== "none") {
+        let factors = [];
+        if (rawFactors && Array.isArray(rawFactors)) {
+          factors = rawFactors
+            .filter(f => f !== null && typeof f === 'object' && f.date !== undefined && f.cum !== undefined)
+            .sort((a, b) => (a.date || 0) - (b.date || 0));
+        }
+
+        let fLatest = 1.0;
+        if (factors.length > 0) {
+          fLatest = parseFloat(factors[factors.length - 1].cum || 1.0);
+        }
+
+        const codeStr = String(processedData[0].code || "");
+        const isEtf = codeStr.startsWith("1") || codeStr.startsWith("5");
+        const decimals = isEtf ? 3 : 2;
+
+        processedData = processedData.map(item => {
+          let dateVal = item.date;
+          if (!dateVal) return item;
+
+          let dateStr = String(dateVal);
+          let dateCompare = parseInt(dateStr.substring(0, 8));
+
+          let fCurrent = 1.0;
+          for (let i = factors.length - 1; i >= 0; i--) {
+            if ((factors[i].date || 0) <= dateCompare) {
+              fCurrent = parseFloat(factors[i].cum || 1.0);
+              break;
+            }
+          }
+
+          let ratio = 1.0;
+          if (fqMode === "qfq") {
+            ratio = fLatest / fCurrent;
+          } else if (fqMode === "hfq") {
+            ratio = 1.0 / fCurrent;
+          }
+
+          // 只折算开、高、低、收
+          const priceFields = ["open", "high", "low", "close"];
+          priceFields.forEach(field => {
+            if (item[field] !== undefined && item[field] !== null) {
+              let rawPrice = parseFloat(item[field]);
+              let adjusted = rawPrice / ratio;
+              item[field] = Math.round(adjusted * Math.pow(10, decimals)) / Math.pow(10, decimals);
+            }
+          });
+
+          // 对于最古老的一个数据，因为没有它的前一日 close，其 pre_close 只能使用自身当天的比率进行折算
+          if (item.pre_close !== undefined && item.pre_close !== null) {
+            let rawPreClose = parseFloat(item.pre_close);
+            let adjustedPre = rawPreClose / ratio;
+            item.pre_close = Math.round(adjustedPre * Math.pow(10, decimals)) / Math.pow(10, decimals);
+          }
+
+          return item;
+        });
+      }
+
+      // 3. 核心机制：统一用“前一日的收盘价”对齐覆盖“今日的前收盘价”
+      // 数据库返回的 data 数组默认是降序排序（最新在前，即 11日 在 10日 前面）
+      // 因此，第 i 天的前收盘价 pre_close 应该严格等于第 i+1 天的已折算收盘价 close
+      for (let i = 0; i < processedData.length - 1; i++) {
+        processedData[i].pre_close = processedData[i + 1].close;
+      }
+
+      return processedData;
+    }
+
     // ================= 核心重构：多周期加载与合并算法 =================
     async function loadData() {
       const code = normalizeCode(el.code.value);
@@ -702,14 +790,25 @@
         }
       }
 
-      // 2. 构造查询 k2
+      // 2. 核心优化：对于日K/周K/月K等周期，我们默默将开始日期往前多拉一个交易日
+      // 这样在做 pre_close 昨日价格对齐覆盖时，最老的那天数据就有昨日 close 可供完美对齐，避开了数据库二次复权 Bug。
+      let actualStart = queryStart;
+      let hasExtraDay = false;
+      if (!isMinFreq && queryStart && state.dates && state.dates.length > 0) {
+        let idx = state.dates.indexOf(queryStart);
+        if (idx !== -1 && idx + 1 < state.dates.length) {
+          actualStart = state.dates[idx + 1];
+          hasExtraDay = true;
+        }
+      }
+
+      // 3. 构造查询 k2
       let k2 = "all:";
-      if (queryStart && queryEnd) {
-        // 如果开始和结束日期都有，则是区间范围查询
-        k2 = `fwd:${queryStart},${queryEnd}`;
-      } else if (queryStart) {
-        // 如果只有开始日期，则是精确查当天的单日/单条记录数据
-        k2 = `key:${queryStart}`;
+      if (actualStart && queryEnd) {
+        k2 = `fwd:${actualStart},${queryEnd}`;
+      } else if (actualStart) {
+        // 如果是单日查询且多要了一天，为了返回前一交易日以便对齐，这里退化为 fwd 区间查询
+        k2 = hasExtraDay ? `fwd:${actualStart},${queryStart}` : `key:${actualStart}`;
       }
 
       const table = isMinFreq ? "分钟k" : "日k";
@@ -719,6 +818,43 @@
       setMessage("正在向本地数据库获取数据...");
       try {
         let data = await requestJson({ cmd: "vals", t: table, k1: `key:${code}`, k2: k2 });
+        
+        // 客户端内存动态前复权 / 后复权折算
+        const fqMode = el.fq.value;
+        if (fqMode !== "none" && data && data.length > 0) {
+          try {
+            // 使用 cmd: "get" 一次性拉出 [Key, Value] 对，日期直接从 Key 最后一截解析并绑定
+            let rawFactors = await requestJson({ cmd: "get", t: "复权", k1: `key:${code}`, k2: "all:" });
+            let factors = [];
+            if (Array.isArray(rawFactors)) {
+              factors = rawFactors.map(item => {
+                let key = item[0];
+                let val = item[1];
+                if (val && typeof val === "object") {
+                  let parts = String(key).split(":");
+                  val.date = parseInt(parts[parts.length - 1]);
+                  return val;
+                }
+                return null;
+              }).filter(f => f !== null);
+            }
+            
+            data = _applyFqInJs(data, factors, fqMode);
+          } catch (fqErr) {
+            console.error("加载复权因子失败，将使用原始不复权价格展示:", fqErr);
+          }
+        } else if (fqMode === "none" && data && data.length > 0) {
+          // 不复权情况下，依然需要把 pre_close 对齐昨日收盘（洗去数据库原有脏数据）
+          data = _applyFqInJs(data, null, "none");
+        }
+
+        // 4. 对齐覆盖完毕后，将多拉出的前一交易日裁切掉
+        if (hasExtraDay && data && data.length > 0) {
+          data = data.filter(item => {
+            let itemDateStr = String(item.date || "");
+            return parseInt(itemDateStr.substring(0, 8)) >= parseInt(queryStart);
+          });
+        }
         
         // 3. 剔除 None 空值
         if (data && Array.isArray(data)) {
@@ -1054,6 +1190,8 @@
 
     el.read.addEventListener("click", loadData);
     el.export.addEventListener("click", exportToCsv);
+    el.fq.addEventListener("change", loadData);
+    el.frequency.addEventListener("change", loadData);
 
     document.addEventListener("keydown", e => {
       if (e.key === "Enter") {
