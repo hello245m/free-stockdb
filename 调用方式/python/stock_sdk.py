@@ -1,6 +1,9 @@
 import sys
+import bisect
+import asyncio
 import datetime
 from typing import Union, List, Dict, Any, Optional
+from collections import defaultdict
 from stockdb import init, rd
 
 class StockDBClient:
@@ -13,7 +16,6 @@ class StockDBClient:
         初始化 StockDB 客户端连接
         """
         try:
-            
             # 优先使用连接初始化
             self.rd = init(host=host, port=port, password=password)
             if self.rd is None:
@@ -23,6 +25,26 @@ class StockDBClient:
                 "未能成功导入底层的 'stockdb' 二进制模块。请确保 stockdb.pyd 文件位于当前目录或 python 搜索路径中。"
             ) from e
 
+        # 一次性预加载全部复权因子到内存
+        self._fq_dates = {}    # {code: [date_str, ...]}  用于二分查找
+        self._fq_cums = {}     # {code: [cum_float, ...]}  对应 cum 值
+        try:
+            tmp = defaultdict(list)
+            raw = self.rd.get("复权*").get("cum")
+            for item in raw:
+                key_str = item[0]
+                cum_val = float(item[1])
+                parts = key_str.split(":")
+                code = parts[1]
+                date = parts[2]
+                tmp[code].append((date, cum_val))
+            # 构建二分查找用的平行数组（LevelDB 天然有序，无需排序）
+            for code, pairs in tmp.items():
+                self._fq_dates[code] = [p[0] for p in pairs]
+                self._fq_cums[code] = [p[1] for p in pairs]
+        except Exception:
+            pass
+
     def _build_time_query(self, start: Optional[str], end: Optional[str], desc: bool) -> str:
         """
         根据开始/结束日期和排序方向，构建底层的范围查询表达式
@@ -30,6 +52,10 @@ class StockDBClient:
         if not start and not end:
             return "*"
         
+        # 精确单日查询优化：如果 start 存在，且 (end 不存在 或 start 与 end 相同)，直接返回日期进行单次点查询
+        if start and (not end or start == end):
+            return start
+            
         op = ">" if desc else "<"
         s_val = start if start else "N"
         e_val = end if end else "N"
@@ -106,8 +132,8 @@ class StockDBClient:
         if not daily_data:
             return []
 
-        # 1. 确保日K线按照日期升序排列以正确计算低开高收
-        sorted_daily = sorted(daily_data, key=lambda x: x.get('date', 0))
+        # LevelDB 天然按日期升序，无需排序
+        sorted_daily = daily_data
 
         # 2. 分组归类
         from collections import defaultdict
@@ -204,8 +230,8 @@ class StockDBClient:
         if not minute_data:
             return []
 
-        # 1. 按时间升序排列以正确合并
-        sorted_min = sorted(minute_data, key=lambda x: x.get('date', 0))
+        # LevelDB 天然按时间升序，无需排序
+        sorted_min = minute_data
         
         interval = int(frequency[:-1]) # '5m' -> 5, '15m' -> 15, '30m' -> 30, '60m' -> 60
 
@@ -300,37 +326,19 @@ class StockDBClient:
     def _apply_fq_in_memory(self, code: str, records: List[Dict[str, Any]], fq_type: str) -> List[Dict[str, Any]]:
         """
         在内存中对 K 线记录（日K或分钟K）执行动态前复权（qfq）或后复权（hfq）折算
+        复权因子已在 __init__ 中预加载到 self._fq_dates / self._fq_cums
         """
         if not records or fq_type not in ('qfq', 'hfq'):
             return records
 
-        # 1. 获取该股票的所有复权因子 (Key 格式: 复权:code:date)
-        try:
-            factor_keys = sorted(self.rd.keys(f"复权:{code}:*"), key=lambda x: str(x))
-        except Exception:
-            factor_keys = []
-
-        if not factor_keys:
+        dates = self._fq_dates.get(code)
+        cums = self._fq_cums.get(code)
+        if not dates:
             return records
 
-        # 2. 构建除息日与累积因子的映射表
-        factors = {}
-        for k in factor_keys:
-            date_str = str(k).split(":")[-1]
-            try:
-                val = self.rd.get(str(k))
-                if val and "cum" in val:
-                    factors[date_str] = float(val["cum"])
-            except Exception:
-                pass
-
-        if not factors:
-            return records
-
-        # 前复权需要最新因子 F_latest
+        # 前复权需要最新因子（列表天然有序，最后一个即最新）
         if fq_type == 'qfq':
-            latest_date = max(factors.keys())
-            f_latest = factors[latest_date]
+            f_latest = cums[-1]
 
         decimals = 3 if code.startswith(('1', '5')) else 2
         adjusted_records = []
@@ -342,20 +350,14 @@ class StockDBClient:
                 adjusted_records.append(r)
                 continue
 
-            # 寻找该记录日期之前最邻近除权日的因子 F_current
-            # 即: 所有 <= r_date_str 的除权日中，日期最大的那一个
-            prev_dates = [d for d in factors.keys() if d <= r_date_str]
-            if prev_dates:
-                f_current = factors[max(prev_dates)]
-            else:
-                f_current = 1.0
+            # 二分查找: 找到 <= r_date_str 的最大除权日对应的 cum
+            idx = bisect.bisect_right(dates, r_date_str) - 1
+            f_current = cums[idx] if idx >= 0 else 1.0
 
             # 根据复权类型计算折算比例
             if fq_type == 'qfq':
-                # 前复权：价格除以 (F_latest / F_current)
                 ratio = f_latest / f_current
             else:
-                # 后复权：价格乘以 F_current，相当于除以 (1 / F_current)
                 ratio = 1.0 / f_current
 
             if abs(ratio - 1.0) < 1e-6:
@@ -363,12 +365,8 @@ class StockDBClient:
                 continue
 
             # 拷贝记录字典，避免直接修改底层数据库缓存的对象
-            try:
-                r_copy = r.copy()
-            except Exception:
-                r_copy = {k: v for k, v in r.items()}
-
-            for field in ['open', 'high', 'low', 'close']:
+            r_copy = r.copy()
+            for field in ['open', 'high', 'low', 'close', 'pre_close']:
                 if field in r_copy and r_copy[field] is not None:
                     try:
                         r_copy[field] = round(float(r_copy[field]) / ratio, decimals)
@@ -410,22 +408,23 @@ class StockDBClient:
             res = self.rd.vals(table, single_code, time_query)
             data_dict[single_code] = list(res)
         else:
-            # 多只股票采用 pipeline 批量查询
+            # 多只股票采用单路 pipeline 批量查询
             pp = self.rd.pipe()
             for c in codes:
-                pp.mvals(table, c, time_query)
+                pp.mget(table, c, time_query)
+            raw = pp.do()
+            if not isinstance(raw, list):
+                raw = [raw]
             
-            raw_results = list(pp)
-            for c, raw in zip(codes, raw_results):
-                # mvals 直接返回字典列表数据
-                data_dict[c] = list(raw) if raw else []
+            for c, items in zip(codes, raw):
+                data_dict[c] = [items] if isinstance(items, dict) else ([item[1] for item in items if isinstance(item, (list, tuple)) and len(item) > 1] if isinstance(items, list) else [])
 
         # 3. 处理数据排序、截取、周期合并与字段过滤
         for c in codes:
             records = data_dict[c]
             
-            # 剔除底层可能返回的 None 空值（例如无成交、停牌或缺失的分钟数据）
-            records = [r for r in records if r is not None]
+            # 剔除无效值（None、空列表等非dict记录）
+            records = [r for r in records if isinstance(r, dict)]
             
             # 在内存中执行动态前/后复权折算
             if fq in ('qfq', 'hfq'):
@@ -437,8 +436,9 @@ class StockDBClient:
             elif frequency in ('5m', '15m', '30m', '60m'):
                 records = self._merge_minutes_to_period(records, frequency)
             
-            # 排序（底层虽然支持排序，但内存排序做一层兜底，确保一致性）
-            records = sorted(records, key=lambda x: x.get('date', 0), reverse=desc)
+            # LevelDB 天然有序，仅在需要降序时反转
+            if desc:
+                records = records[::-1]
             
             # 限额截取
             if limit is not None:
@@ -492,23 +492,23 @@ class StockDBClient:
             res = await self.rd.vals(table, single_code, time_query)
             data_dict[single_code] = res
         else:
-            # 批量多股票使用 pipeline 异步执行
+            # 批量多股票使用单路 pipeline 异步批量查询
             pp = self.rd.pipe()
             for c in codes:
-                pp.mvals(table, c, time_query)
+                pp.mget(table, c, time_query)
+            raw = await pp
+            if not isinstance(raw, list):
+                raw = [raw]
             
-            # await pp 会返回原生嵌套 list
-            raw_results = await pp
-            for c, raw in zip(codes, raw_results):
-                # mvals 直接返回字典列表数据
-                data_dict[c] = list(raw) if raw else []
+            for c, items in zip(codes, raw):
+                data_dict[c] = [items] if isinstance(items, dict) else ([item[1] for item in items if isinstance(item, (list, tuple)) and len(item) > 1] if isinstance(items, list) else [])
 
         # 2. 转换与合并
         for c in codes:
             records = data_dict[c]
             
-            # 剔除底层可能返回的 None 空值（例如无成交、停牌或缺失的分钟数据）
-            records = [r for r in records if r is not None]
+            # 剔除无效值（None、空列表等非dict记录）
+            records = [r for r in records if isinstance(r, dict)]
             
             # 在内存中执行动态前/后复权折算
             if fq in ('qfq', 'hfq'):
@@ -519,7 +519,8 @@ class StockDBClient:
             elif frequency in ('5m', '15m', '30m', '60m'):
                 records = self._merge_minutes_to_period(records, frequency)
                 
-            records = sorted(records, key=lambda x: x.get('date', 0), reverse=desc)
+            if desc:
+                records = records[::-1]
             
             if limit is not None:
                 records = records[:limit]
