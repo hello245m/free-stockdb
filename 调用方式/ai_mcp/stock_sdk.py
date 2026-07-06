@@ -235,6 +235,22 @@ class StockDBClient:
         
         interval = int(frequency[:-1]) # '5m' -> 5, '15m' -> 15, '30m' -> 30, '60m' -> 60
 
+        def trading_elapsed(minute_of_day: int) -> Optional[int]:
+            if 570 <= minute_of_day <= 690:
+                return minute_of_day - 570
+            if 780 <= minute_of_day <= 900:
+                if minute_of_day == 780:
+                    return 121
+                return 120 + (minute_of_day - 780)
+            return None
+
+        def elapsed_to_minute_of_day(elapsed: int) -> int:
+            if elapsed <= 120:
+                return 570 + elapsed
+            if elapsed > 240:
+                elapsed = 240
+            return 780 + (elapsed - 120)
+
         # 2. 分组归类
         from collections import defaultdict
         grouped = defaultdict(list)
@@ -244,22 +260,30 @@ class StockDBClient:
             if not date_val:
                 continue
             
-            date_str = str(date_val)
-            if len(date_str) < 14:
+            try:
+                date_int = int(date_val)
+            except (TypeError, ValueError):
                 continue
                 
-            try:
-                dt = datetime.datetime.strptime(date_str, "%Y%m%d%H%M%S")
-            except ValueError:
+            if date_int < 10000000000000:
                 continue
 
             # 经典时间轴对齐：计算对齐时刻
-            total_minutes = dt.hour * 60 + dt.minute
-            group_idx = (total_minutes - 1) // interval
-            group_end_minutes = (group_idx + 1) * interval
+            ymd = date_int // 1000000
+            hour = (date_int // 10000) % 100
+            minute = (date_int // 100) % 100
+            elapsed = trading_elapsed(hour * 60 + minute)
+            if elapsed is None:
+                continue
+
+            if elapsed <= 0:
+                group_end_elapsed = interval
+            else:
+                group_idx = (elapsed - 1) // interval
+                group_end_elapsed = (group_idx + 1) * interval
             
             # 使用对齐结束时间点作为分组键
-            key = (dt.year, dt.month, dt.day, group_end_minutes)
+            key = (ymd, group_end_elapsed)
             grouped[key].append(item)
 
         # 3. 聚合计算
@@ -267,7 +291,7 @@ class StockDBClient:
         sorted_keys = sorted(grouped.keys())
 
         for idx, key in enumerate(sorted_keys):
-            year, month, day, end_mins = key
+            ymd, end_elapsed = key
             items = grouped[key]
             first_item = items[0]
             last_item = items[-1]
@@ -278,15 +302,16 @@ class StockDBClient:
             amount = sum(x['amount'] for x in items if 'amount' in x)
 
             # 换算回 HHMMSS
-            end_hour = end_mins // 60
-            end_minute = end_mins % 60
+            end_minute_of_day = elapsed_to_minute_of_day(end_elapsed)
+            end_hour = end_minute_of_day // 60
+            end_minute = end_minute_of_day % 60
             
             # 溢出保护
             if end_hour >= 24:
                 end_hour = 23
                 end_minute = 59
                 
-            aligned_date_int = int(f"{year:04d}{month:02d}{day:02d}{end_hour:02d}{end_minute:02d}00")
+            aligned_date_int = ymd * 1000000 + end_hour * 10000 + end_minute * 100
 
             merged_item = {
                 'date': aligned_date_int,
