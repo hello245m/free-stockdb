@@ -1,0 +1,35 @@
+四种调用方式
+
+
+1、浏览器查看：
+    直接打开 查看数据.html 即可
+
+2、excel/wps 宏
+
+    wps_js_macro.js
+
+3、http接口
+    http_api.py
+
+
+4、python:
+    前提: 先运行一次文件 ./pybao/安装.py
+
+    调用方式：
+        /python/sdk_test.py
+
+    依赖库文件(pybao)：
+
+        stockdb.pyd         -->python调用3.8+ 非自由线程
+        3.14t+stockdb.pyd   -->python调用3.14t+ 自由线程(调用请改名stockdb.pyd)
+        stock_sdk.py        -->成品调用sdk
+
+
+    （进阶,非必要）原生：
+        rd_test.py
+
+5、ai
+    前提: 先运行一次文件 ./pybao/安装.py
+
+    /ai_mcp/README.md     说明
+    /ai_mcp/stock_mcp_server.py  mcp服务

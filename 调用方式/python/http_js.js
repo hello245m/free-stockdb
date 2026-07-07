@@ -1,15 +1,13 @@
 /**
- * WPS 表格自定义股票数据函数
- * 自定义公式: =STOCK_DATA(code, [start], [end], [frequency], [fields])
+ * 全局函数 GP(code, [start], [end], [frequency], [fields])
  * 
- * 使用说明：
- * 1. 打开 WPS 表格，点击顶部“开发工具” -> “JS宏” -> “设计器”。
- * 2. 在弹出的宏编辑器窗口中，右键点击“模块”，选择“插入模块”。
- * 3. 将本段全部代码粘贴进模块中，保存并关闭宏编辑器。
- * 4. 即可在任意单元格中使用公式，如: =GP("600633", "20260620", "20260626", "1d", "date,close,pct_chg")
+ * 说明：
+ * js版本演示通过http_api访问stockdb （http://127.0.0.1:7899）
+ * 测试，浏览器f12粘贴此代码，(注意跨域，需先打开本地任意html)。
+ * console.table(GP("600633", "20260620", "20260626", "1d", "date,close,pct_chg","qfq"))
  */
 
-// 暴露为工作表函数（部分 WPS 版本需要这一句或默认导出所有全局函数）
+// 全局函数GP()
 // @customfunction
 function GP(code, start_date, end_date, frequency, fields, fq) {
     // 默认参数处理
