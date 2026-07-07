@@ -401,6 +401,13 @@
         .replace(/\D/g, "");
     }
 
+    function normalizeCodeSuggestQuery(raw) {
+      const digits = normalizeCode(raw);
+      // 完整 6 位代码时保留最后一位作为可替换位，方便在相邻代码间快速切换。
+      if (digits.length >= 6) return digits.slice(0, -1);
+      return digits;
+    }
+
     function isValidCode(code) {
       return /^\d{6}$/.test(code);
     }
@@ -413,6 +420,13 @@
 
     function normalizeDateQuery(raw) {
       return String(raw || "").replace(/\D/g, "");
+    }
+
+    function normalizeDateSuggestQuery(raw) {
+      const digits = normalizeDateQuery(raw);
+      // 完整日期时保留最后一位作为可替换位，方便从 2026-06-29 快速切到 2026-06-28。
+      if (digits.length >= 8) return digits.slice(0, -1);
+      return digits;
     }
 
     function displayDate(yyyymmdd) {
@@ -552,6 +566,7 @@
         show();
       });
       input.addEventListener("focus", show);
+      input.addEventListener("click", show);
       input.addEventListener("blur", () => setTimeout(() => box.classList.remove("open"), 120));
       box.addEventListener("scroll", () => {
         if (!box.classList.contains("open")) return;
@@ -581,8 +596,6 @@
       if (!isValidCode(code) || state.datesCode === code) return;
       state.dates = [];
       state.datesCode = code;
-      el.start.value = "";
-      el.end.value = "";
       el.hint.textContent = `正在加载 ${code} 的历史日期...`;
 
       try {
@@ -627,6 +640,53 @@
       if (value == null) return "";
       if (typeof value === "object") return JSON.stringify(value);
       return String(value);
+    }
+
+    function factorFromKeyValue(key, val) {
+      if (!key || !val || typeof val !== "object") return null;
+      const parts = String(key).split(":");
+      const date = parseInt(parts[parts.length - 1], 10);
+      if (!Number.isFinite(date)) return null;
+      return { ...val, date };
+    }
+
+    function isFactorPair(item) {
+      return Array.isArray(item)
+        && item.length >= 2
+        && typeof item[0] === "string"
+        && item[1]
+        && typeof item[1] === "object"
+        && !Array.isArray(item[1]);
+    }
+
+    async function loadFqFactors(code) {
+      const rawFactors = await requestJson({ cmd: "get", t: "复权", k1: `key:${code}`, k2: "all:" });
+      if (rawFactors == null || rawFactors === "" || (Array.isArray(rawFactors) && rawFactors.length === 0)) {
+        return [];
+      }
+
+      if (Array.isArray(rawFactors) && rawFactors.some(isFactorPair)) {
+        return rawFactors
+          .map(item => isFactorPair(item) ? factorFromKeyValue(item[0], item[1]) : null)
+          .filter(f => f !== null);
+      }
+
+      const keys = await requestJson({ cmd: "keys", t: "复权", k1: `key:${code}`, k2: "all:" });
+      if (!Array.isArray(keys) || keys.length === 0) return [];
+
+      if (Array.isArray(rawFactors) && rawFactors.length === keys.length) {
+        return rawFactors
+          .map((val, i) => factorFromKeyValue(keys[i], val))
+          .filter(f => f !== null);
+      }
+
+      if (!Array.isArray(rawFactors) && keys.length === 1) {
+        const factor = factorFromKeyValue(keys[0], rawFactors);
+        return factor ? [factor] : [];
+      }
+
+      console.warn("复权因子 get/keys 返回形态不一致，已忽略。", { rawFactors, keys });
+      return [];
     }
 
     function renderTable(rows) {
@@ -768,10 +828,6 @@
         setMessage("代码需要是 6 位数字。", "error");
         return;
       }
-      if (!start) {
-        setMessage("请指定开始日期。", "error");
-        return;
-      }
 
       // 1. 处理分钟级时间戳的补全
       let queryStart = start;
@@ -812,33 +868,25 @@
       }
 
       const table = isMinFreq ? "分钟k" : "日k";
+      const requestParams = { cmd: "vals", t: table, k1: `key:${code}`, k2: k2 };
+      const useLatestRows = !queryStart && !queryEnd;
+      if (useLatestRows) {
+        requestParams.k2 = "all:";
+        requestParams.num = "-100";
+      }
 
       el.read.disabled = true;
       el.export.disabled = true;
       setMessage("正在向本地数据库获取数据...");
       try {
-        let data = await requestJson({ cmd: "vals", t: table, k1: `key:${code}`, k2: k2 });
+        let data = await requestJson(requestParams);
         
         // 客户端内存动态前复权 / 后复权折算
         const fqMode = el.fq.value;
         if (fqMode !== "none" && data && data.length > 0) {
           try {
-            // 使用 cmd: "get" 一次性拉出 [Key, Value] 对，日期直接从 Key 最后一截解析并绑定
-            let rawFactors = await requestJson({ cmd: "get", t: "复权", k1: `key:${code}`, k2: "all:" });
-            let factors = [];
-            if (Array.isArray(rawFactors)) {
-              factors = rawFactors.map(item => {
-                let key = item[0];
-                let val = item[1];
-                if (val && typeof val === "object") {
-                  let parts = String(key).split(":");
-                  val.date = parseInt(parts[parts.length - 1]);
-                  return val;
-                }
-                return null;
-              }).filter(f => f !== null);
-            }
-            
+            // cmd=get 多条返回 [key, value]，单条只返回 value；单条时用 cmd=keys 补出日期。
+            const factors = await loadFqFactors(code);
             data = _applyFqInJs(data, factors, fqMode);
           } catch (fqErr) {
             console.error("加载复权因子失败，将使用原始不复权价格展示:", fqErr);
@@ -888,7 +936,9 @@
 
         // 5. 渲染表格
         const rows = parseRows(processed);
-        el.title.textContent = `${code} [${frequency}] ${displayDate(start)} 至 ${displayDate(end || start)}`;
+        el.title.textContent = useLatestRows
+          ? `${code} [${frequency}] 最近 100 条`
+          : `${code} [${frequency}] ${displayDate(start)} 至 ${displayDate(end || start)}`;
         renderTable(rows);
         setMessage("数据载入并合并成功！", "ok");
         el.export.disabled = false;
@@ -1143,8 +1193,16 @@
     const triggerDateInputLoad = debounce(input => {
       const code = normalizeCode(el.code.value);
       const start = normalizeDate(el.start.value);
-      const end = normalizeDate(el.end.value);
-      if (!isValidCode(code) || !start) return;
+      const endDigits = normalizeDateQuery(el.end.value);
+      if (!isValidCode(code)) return;
+      if (!start) return;
+      if (endDigits && endDigits.length < 8) return;
+      loadData();
+    });
+
+    const triggerCodeInputLoad = debounce(() => {
+      const code = normalizeCode(el.code.value);
+      if (!isValidCode(code)) return;
       loadData();
     });
 
@@ -1152,15 +1210,19 @@
       input: el.code,
       box: el.codeSuggest,
       getOptions: () => state.codes,
-      normalizeInput: normalizeCode,
+      normalizeInput: normalizeCodeSuggestQuery,
       formatOption: code => code,
       onInput: raw => {
         const code = normalizeCode(raw);
-        if (isValidCode(code)) loadDatesForCode(code);
+        if (isValidCode(code)) {
+          loadDatesForCode(code);
+          triggerCodeInputLoad();
+        }
       },
       onPick: code => {
         el.code.value = code;
         loadDatesForCode(code);
+        loadData();
       }
     });
 
@@ -1169,7 +1231,7 @@
         input,
         box,
         getOptions: () => state.dates,
-        normalizeInput: normalizeDateQuery,
+        normalizeInput: normalizeDateSuggestQuery,
         formatOption: displayDate,
         onInput: () => triggerDateInputLoad(input),
         onPick: date => {
@@ -1186,6 +1248,7 @@
       const code = normalizeCode(el.code.value);
       el.code.value = code;
       if (isValidCode(code)) loadDatesForCode(code);
+      if (isValidCode(code)) loadData();
     });
 
     el.read.addEventListener("click", loadData);
