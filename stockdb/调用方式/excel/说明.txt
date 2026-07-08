@@ -1,0 +1,15 @@
+三种方式，任一
+
+1、浏览器查看excel：
+    直接打开 查看数据.html 即可 浏览 导出excel
+
+2、excel/wps js宏插件
+
+    ./wps_js_macro.js
+
+3、AI自定义 插件 
+    复制
+
+    ./wps_js_macro.js
+
+    到豆包改成任意宏插件
