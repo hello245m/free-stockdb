@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>多周期股票数据视图</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --panel: #ffffff;
+      --line: #d9e1ec;
+      --line-strong: #b9c7d8;
+      --text: #1f2937;
+      --muted: #64748b;
+      --brand: #1769aa;
+      --brand-dark: #0f4f81;
+      --danger: #b42318;
+      --ok: #067647;
+      --stripe: #f2f7fd;
+      --header: #e9f1fb;
+      --shadow: 0 18px 45px rgba(31, 41, 55, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, rgba(23, 105, 170, 0.12), transparent 34rem),
+        linear-gradient(135deg, #fafdff 0%, var(--bg) 55%, #eef4fb 100%);
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    }
+
+    .app {
+      width: min(1480px, calc(100vw - 32px));
+      margin: 24px auto;
+    }
+
+    .title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.04em;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .toolbar {
+      display: grid;
+      grid-template-columns: repeat(5, 170px) 1fr;
+      gap: 12px;
+      align-items: end;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.92);
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 12px;
+      z-index: 10;
+      backdrop-filter: blur(10px);
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    input, select {
+      width: 100%;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      padding: 0 11px;
+      color: var(--text);
+      background: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+
+    select {
+      cursor: pointer;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(23, 105, 170, 0.12);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button {
+      height: 38px;
+      border: 0;
+      border-radius: 10px;
+      padding: 0 16px;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    button.secondary {
+      background: #344054;
+    }
+
+    button:hover { background: var(--brand-dark); }
+    button.secondary:hover { background: #1d2939; }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      margin-left: 4px;
+    }
+
+    .message {
+      margin: 12px 0;
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .message.error { color: var(--danger); }
+    .message.ok { color: var(--ok); }
+
+    .suggest-wrap {
+      position: relative;
+    }
+
+    .suggest {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: calc(100% + 4px);
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: var(--shadow);
+      display: none;
+      z-index: 30;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+
+    .suggest::-webkit-scrollbar { display: none; }
+
+    .suggest.open {
+      display: block;
+      height: 280px;
+    }
+
+    .suggest-canvas {
+      position: relative;
+      width: 100%;
+    }
+
+    .suggest button {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 32px;
+      border-radius: 0;
+      background: #fff;
+      color: var(--text);
+      text-align: left;
+      font-weight: 500;
+      font-family: Consolas, "Microsoft YaHei", monospace;
+    }
+
+    .suggest button:hover { background: var(--header); }
+
+    .sheet {
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .sheet-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfdff;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 12px;
+      white-space: nowrap;
+      table-layout: auto;
+    }
+
+    th, td {
+      padding: 6px 8px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--header);
+      color: #24364b;
+      font-weight: 800;
+    }
+
+    tr:nth-child(even) td { background: var(--stripe); }
+    tr:hover td { background: #e7f0fb; }
+
+    .empty {
+      padding: 46px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    @media (max-width: 920px) {
+      .toolbar { grid-template-columns: 1fr; position: static; }
+      .title { display: block; }
+      .status { margin-top: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="title">
+      <h1>多周期股票数据视图看板</h1>
+      <div id="status" class="status">接口：127.0.0.1:7899</div>
+    </div>
+
+    <section class="toolbar">
+      <label class="suggest-wrap">
+        代码
+        <input id="codeInput" placeholder="例如 600633" autocomplete="off" />
+        <div id="codeSuggest" class="suggest"></div>
+      </label>
+
+      <label class="suggest-wrap">
+        开始日期
+        <input id="dateStart" placeholder="YYYY-MM-DD 或 YYYYMMDD" autocomplete="off" />
+        <div id="startSuggest" class="suggest"></div>
+      </label>
+
+      <label class="suggest-wrap">
+        结束日期（可选）
+        <input id="dateEnd" placeholder="YYYY-MM-DD 或 YYYYMMDD" autocomplete="off" />
+        <div id="endSuggest" class="suggest"></div>
+      </label>
+
+      <label>
+        周期频率
+        <select id="frequencySelect">
+          <option value="1d">日K (1d)</option>
+          <option value="1m">1分钟 (1m)</option>
+          <option value="5m">5分钟 (5m)</option>
+          <option value="15m">15分钟 (15m)</option>
+          <option value="30m">30分钟 (30m)</option>
+          <option value="60m">60分钟 (60m)</option>
+          <option value="1w">周K (1w)</option>
+          <option value="1M">月K (1M)</option>
+        </select>
+      </label>
+
+      <label>
+        复权类型
+        <select id="fqSelect">
+          <option value="qfq">前复权</option>
+          <option value="hfq">后复权</option>
+          <option value="none">不复权</option>
+        </select>
+      </label>
+
+      <div class="actions">
+        <button id="readBtn">读取数据</button>
+        <button id="exportBtn" class="secondary" disabled>导出 Excel/CSV</button>
+        <span id="dateHint" class="hint" style="margin-left: 12px; font-size: 11px; line-height: 1.35; color: var(--muted); white-space: pre-line; display: inline-block; vertical-align: middle;">输入代码加载提示。</span>
+      </div>
+    </section>
+
+    <div id="message" class="message" style="margin: 6px 0;"></div>
+
+    <section class="sheet">
+      <div class="sheet-meta">
+        <span id="sheetTitle">未加载数据</span>
+        <span id="rowCount">0 行</span>
+      </div>
+      <div class="table-wrap" id="tableWrap">
+        <div class="empty">请输入代码、时间并选择周期，然后点击读取。</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:7899/";
+    const CODE_INDEX_DATE = "20260625";
+    const SUGGEST_ROW_HEIGHT = 32;
+    const SUGGEST_BUFFER_ROWS = 10;
+    
+    // 对齐真实数据库英文主键的字段映射表
+    const FIELD_MAP = {
+      "日期/时间": "date",
+      "代码": "code",
+      "名称": "name",
+      "开盘价": "open",
+      "最高价": "high",
+      "最低价": "low",
+      "收盘价": "close",
+      "前收盘价": "pre_close",
+      "成交量": "volume",
+      "成交额": "amount",
+      "换手率": "turnover",
+      "涨幅%": "pct_chg",
+      "振幅%": "amplitude",
+      "是否ST": "is_st",
+      "量比": "vol_ratio",
+      "总股本": "total_share",
+      "流通股本": "float_share",
+      "总市值": "total_mv",
+      "流通市值": "float_mv",
+      "市盈率": "pe_ttm",
+      "市净率": "pb"
+    };
+    const FIELD_ORDER = Object.values(FIELD_MAP);
+    const FIELD_LABELS = Object.fromEntries(Object.entries(FIELD_MAP).map(([label, key]) => [key, label]));
+
+    const state = {
+      codes: [],
+      code: "",
+      dates: [],
+      datesCode: "",
+      currentData: [] // 缓存在内存中的 K 线数组
+    };
+
+    const el = {
+      code: document.getElementById("codeInput"),
+      start: document.getElementById("dateStart"),
+      end: document.getElementById("dateEnd"),
+      frequency: document.getElementById("frequencySelect"),
+      fq: document.getElementById("fqSelect"),
+      read: document.getElementById("readBtn"),
+      export: document.getElementById("exportBtn"),
+      hint: document.getElementById("dateHint"),
+      msg: document.getElementById("message"),
+      table: document.getElementById("tableWrap"),
+      title: document.getElementById("sheetTitle"),
+      rows: document.getElementById("rowCount"),
+      codeSuggest: document.getElementById("codeSuggest"),
+      startSuggest: document.getElementById("startSuggest"),
+      endSuggest: document.getElementById("endSuggest")
+    };
+
+    function normalizeCode(raw) {
+      return String(raw || "")
+        .trim()
+        .toLowerCase()
+        .replace(/^sz|^sh/, "")
+        .replace(/\D/g, "");
+    }
+
+    function normalizeCodeSuggestQuery(raw) {
+      const digits = normalizeCode(raw);
+      // 完整 6 位代码时保留最后一位作为可替换位，方便在相邻代码间快速切换。
+      if (digits.length >= 6) return digits.slice(0, -1);
+      return digits;
+    }
+
+    function isValidCode(code) {
+      return /^\d{6}$/.test(code);
+    }
+
+    function normalizeDate(raw) {
+      const digits = String(raw || "").replace(/\D/g, "");
+      if (digits.length < 8) return "";
+      return digits.slice(0, 8);
+    }
+
+    function normalizeDateQuery(raw) {
+      return String(raw || "").replace(/\D/g, "");
+    }
+
+    function normalizeDateSuggestQuery(raw) {
+      const digits = normalizeDateQuery(raw);
+      // 完整日期时保留最后一位作为可替换位，方便从 2026-06-29 快速切到 2026-06-28。
+      if (digits.length >= 8) return digits.slice(0, -1);
+      return digits;
+    }
+
+    function displayDate(yyyymmdd) {
+      const s = String(yyyymmdd);
+      if (s.length === 8) {
+        return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+      } else if (s.length === 14) {
+        return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}:${s.slice(12, 14)}`;
+      }
+      return yyyymmdd || "";
+    }
+
+    function normalizeDateRangeInputs() {
+      let start = normalizeDate(el.start.value);
+      let end = normalizeDate(el.end.value);
+      if (start && end && end < start) {
+        const tmp = start;
+        start = end;
+        end = tmp;
+      }
+      if (start) el.start.value = displayDate(start);
+      if (end) el.end.value = displayDate(end);
+      return { start, end };
+    }
+
+    function setMessage(text, type = "") {
+      el.msg.textContent = text || "";
+      el.msg.className = `message ${type}`;
+    }
+
+    function debounce(fn, delay = 260) {
+      let timer = 0;
+      return (...args) => {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn(...args), delay);
+      };
+    }
+
+    function buildUrl(params) {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => qs.set(k, v));
+      return `${API_BASE}?${qs.toString()}`;
+    }
+
+    async function requestJson(params) {
+      const res = await fetch(buildUrl(params), { method: "GET", cache: "no-store" });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    }
+
+    function extractCodes(keys) {
+      const result = [];
+      for (const key of Array.isArray(keys) ? keys : []) {
+        const m = String(key).match(/^日k:(\d{6}):\d{8}$/);
+        if (m) result.push(m[1]);
+      }
+      return [...new Set(result)].sort();
+    }
+
+    function extractDates(keys) {
+      const result = [];
+      for (const key of Array.isArray(keys) ? keys : []) {
+        const m = String(key).match(/^日k:\d{6}:(\d{8})$/);
+        if (m) result.push(m[1]);
+      }
+      // 降序排序，最新的日期（如 2026）排在最前面，防止联想提示全是 2000 年
+      return [...new Set(result)].sort((a, b) => b.localeCompare(a));
+    }
+
+    function filterOptions(options, rawInput, normalizer = v => String(v || "")) {
+      const q = normalizer(rawInput);
+      if (!q) return options.slice();
+
+      const starts = [];
+      const contains = [];
+      for (const item of options) {
+        const value = normalizer(item);
+        if (value.startsWith(q)) starts.push(item);
+        else if (value.includes(q)) contains.push(item);
+      }
+      return starts.concat(contains);
+    }
+
+    function bindSuggest({ input, box, getOptions, normalizeInput, formatOption, onPick, onInput }) {
+      const virtual = {
+        matches: [],
+        raf: 0
+      };
+
+      function renderVirtual() {
+        const visibleRows = Math.ceil(box.clientHeight / SUGGEST_ROW_HEIGHT) + SUGGEST_BUFFER_ROWS * 2;
+        const first = Math.max(0, Math.floor(box.scrollTop / SUGGEST_ROW_HEIGHT) - SUGGEST_BUFFER_ROWS);
+        const last = Math.min(virtual.matches.length, first + visibleRows);
+        const visible = virtual.matches.slice(first, last);
+
+        box.innerHTML = "";
+        if (!visible.length) {
+          box.classList.remove("open");
+          return;
+        }
+
+        const canvas = document.createElement("div");
+        canvas.className = "suggest-canvas";
+        canvas.style.height = `${virtual.matches.length * SUGGEST_ROW_HEIGHT}px`;
+        box.appendChild(canvas);
+
+        for (let i = 0; i < visible.length; i++) {
+          const item = visible[i];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = formatOption(item);
+          btn.style.top = `${(first + i) * SUGGEST_ROW_HEIGHT}px`;
+          btn.addEventListener("mousedown", e => {
+            e.preventDefault();
+            onPick(item);
+            box.classList.remove("open");
+          });
+          canvas.appendChild(btn);
+        }
+        box.classList.add("open");
+      }
+
+      function show() {
+        virtual.matches = filterOptions(getOptions(), input.value, normalizeInput);
+        box.scrollTop = 0;
+        box.classList.toggle("open", virtual.matches.length > 0);
+        renderVirtual();
+      }
+
+      input.addEventListener("input", () => {
+        if (onInput) onInput(input.value);
+        show();
+      });
+      input.addEventListener("focus", show);
+      input.addEventListener("click", show);
+      input.addEventListener("blur", () => setTimeout(() => box.classList.remove("open"), 120));
+      box.addEventListener("scroll", () => {
+        if (!box.classList.contains("open")) return;
+        if (virtual.raf) cancelAnimationFrame(virtual.raf);
+        virtual.raf = requestAnimationFrame(() => {
+          virtual.raf = 0;
+          renderVirtual();
+        });
+      });
+      return show;
+    }
+
+    async function initCodes() {
+      setMessage("正在初始化代码列表...");
+      try {
+        const keys = await requestJson({ cmd: "keys", t: "日k", k1: "all:", k2: `key:${CODE_INDEX_DATE}` });
+        state.codes = extractCodes(keys);
+        el.hint.textContent = `已加载 ${state.codes.length} 个代码，输入可筛选。`;
+        setMessage("代码列表初始化完成。", "ok");
+      } catch (err) {
+        el.hint.textContent = "未检测到代码列表，请确保数据库已在本地运行。";
+        setMessage(`代码初始化失败: ${err.message}`, "error");
+      }
+    }
+
+    async function loadDatesForCode(code) {
+      if (!isValidCode(code) || state.datesCode === code) return;
+      state.dates = [];
+      state.datesCode = code;
+      el.hint.textContent = `正在加载 ${code} 的历史日期...`;
+
+      try {
+        const keys = await requestJson({ cmd: "keys", t: `日k:${code}*` });
+        if (state.datesCode !== code) return;
+
+        state.dates = extractDates(keys);
+
+        if (!state.dates.length) {
+          el.hint.textContent = `${code} 没有日期数据。`;
+          return;
+        }
+        const first = state.dates[0];
+        const last = state.dates[state.dates.length - 1];
+        el.hint.textContent = `个股: ${code}\n交易日: ${state.dates.length} 天\n区间: ${displayDate(last)} 至 ${displayDate(first)}`;
+        setMessage(`${code} 日期加载完成。`, "ok");
+      } catch (err) {
+        state.dates = [];
+        state.datesCode = "";
+        el.hint.textContent = `${code} 日期加载失败。`;
+        setMessage(`加载日期失败：${err.message}`, "error");
+      }
+    }
+
+    function parseRows(data) {
+      if (data == null || data === "") return [];
+      const raw = Array.isArray(data) ? data : [data];
+      return raw.map((item, i) => normalizeRow(item, i));
+    }
+
+    function normalizeRow(item, index) {
+      if (item && typeof item === "object" && !Array.isArray(item)) return item;
+      if (Array.isArray(item)) {
+        const row = {};
+        item.forEach((v, i) => row[`列${i + 1}`] = stringifyCell(v));
+        return row;
+      }
+      return { 序号: index + 1, 值: stringifyCell(item) };
+    }
+
+    function stringifyCell(value) {
+      if (value == null) return "";
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function factorFromKeyValue(key, val) {
+      if (!key || !val || typeof val !== "object") return null;
+      const parts = String(key).split(":");
+      const date = parseInt(parts[parts.length - 1], 10);
+      if (!Number.isFinite(date)) return null;
+      return { ...val, date };
+    }
+
+    function isFactorPair(item) {
+      return Array.isArray(item)
+        && item.length >= 2
+        && typeof item[0] === "string"
+        && item[1]
+        && typeof item[1] === "object"
+        && !Array.isArray(item[1]);
+    }
+
+    async function loadFqFactors(code) {
+      const rawFactors = await requestJson({ cmd: "get", t: "复权", k1: `key:${code}`, k2: "all:" });
+      if (rawFactors == null || rawFactors === "" || (Array.isArray(rawFactors) && rawFactors.length === 0)) {
+        return [];
+      }
+
+      if (Array.isArray(rawFactors) && rawFactors.some(isFactorPair)) {
+        return rawFactors
+          .map(item => isFactorPair(item) ? factorFromKeyValue(item[0], item[1]) : null)
+          .filter(f => f !== null);
+      }
+
+      const keys = await requestJson({ cmd: "keys", t: "复权", k1: `key:${code}`, k2: "all:" });
+      if (!Array.isArray(keys) || keys.length === 0) return [];
+
+      if (Array.isArray(rawFactors) && rawFactors.length === keys.length) {
+        return rawFactors
+          .map((val, i) => factorFromKeyValue(keys[i], val))
+          .filter(f => f !== null);
+      }
+
+      if (!Array.isArray(rawFactors) && keys.length === 1) {
+        const factor = factorFromKeyValue(keys[0], rawFactors);
+        return factor ? [factor] : [];
+      }
+
+      console.warn("复权因子 get/keys 返回形态不一致，已忽略。", { rawFactors, keys });
+      return [];
+    }
+
+    function renderTable(rows) {
+      el.rows.textContent = `${rows.length} 行`;
+      if (!rows.length) {
+        el.table.innerHTML = `<div class="empty">没有数据。</div>`;
+        return;
+      }
+
+      const columns = [];
+      const seen = new Set();
+      for (const col of FIELD_ORDER) {
+        if (rows.some(row => Object.prototype.hasOwnProperty.call(row, col))) {
+          seen.add(col);
+          columns.push(col);
+        }
+      }
+      for (const row of rows) {
+        Object.keys(row).forEach(k => {
+          if (!seen.has(k)) {
+            seen.add(k);
+            columns.push(k);
+          }
+        });
+      }
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const trh = document.createElement("tr");
+      columns.forEach(col => {
+        const th = document.createElement("th");
+        th.textContent = FIELD_LABELS[col] || col;
+        trh.appendChild(th);
+      });
+      thead.appendChild(trh);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        columns.forEach(col => {
+          const td = document.createElement("td");
+          td.textContent = stringifyCell(row[col]);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+
+      el.table.innerHTML = "";
+      el.table.appendChild(table);
+    }
+
+    // ================= 客户端动态复权折算算法 =================
+    function _applyFqInJs(data, rawFactors, fqMode) {
+      if (!data || data.length === 0) return data;
+
+      // 1. 克隆数据，防污染原始变量
+      let processedData = data.map(item => ({ ...item }));
+
+      // 2. 如果不是不复权，先执行除 pre_close 以外的价格字段的复权折算
+      if (fqMode !== "none") {
+        let factors = [];
+        if (rawFactors && Array.isArray(rawFactors)) {
+          factors = rawFactors
+            .filter(f => f !== null && typeof f === 'object' && f.date !== undefined && f.cum !== undefined)
+            .sort((a, b) => (a.date || 0) - (b.date || 0));
+        }
+
+        let fLatest = 1.0;
+        if (factors.length > 0) {
+          fLatest = parseFloat(factors[factors.length - 1].cum || 1.0);
+        }
+
+        const codeStr = String(processedData[0].code || "");
+        const isEtf = codeStr.startsWith("1") || codeStr.startsWith("5");
+        const decimals = isEtf ? 3 : 2;
+
+        processedData = processedData.map(item => {
+          let dateVal = item.date;
+          if (!dateVal) return item;
+
+          let dateStr = String(dateVal);
+          let dateCompare = parseInt(dateStr.substring(0, 8));
+
+          let fCurrent = 1.0;
+          for (let i = factors.length - 1; i >= 0; i--) {
+            if ((factors[i].date || 0) <= dateCompare) {
+              fCurrent = parseFloat(factors[i].cum || 1.0);
+              break;
+            }
+          }
+
+          let ratio = 1.0;
+          if (fqMode === "qfq") {
+            ratio = fLatest / fCurrent;
+          } else if (fqMode === "hfq") {
+            ratio = 1.0 / fCurrent;
+          }
+
+          // 只折算开、高、低、收
+          const priceFields = ["open", "high", "low", "close"];
+          priceFields.forEach(field => {
+            if (item[field] !== undefined && item[field] !== null) {
+              let rawPrice = parseFloat(item[field]);
+              let adjusted = rawPrice / ratio;
+              item[field] = Math.round(adjusted * Math.pow(10, decimals)) / Math.pow(10, decimals);
+            }
+          });
+
+          // 对于最古老的一个数据，因为没有它的前一日 close，其 pre_close 只能使用自身当天的比率进行折算
+          if (item.pre_close !== undefined && item.pre_close !== null) {
+            let rawPreClose = parseFloat(item.pre_close);
+            let adjustedPre = rawPreClose / ratio;
+            item.pre_close = Math.round(adjustedPre * Math.pow(10, decimals)) / Math.pow(10, decimals);
+          }
+
+          return item;
+        });
+      }
+
+      // 3. 核心机制：统一用“前一日的收盘价”对齐覆盖“今日的前收盘价”
+      // 数据库返回的 data 数组默认是降序排序（最新在前，即 11日 在 10日 前面）
+      // 因此，第 i 天的前收盘价 pre_close 应该严格等于第 i+1 天的已折算收盘价 close
+      for (let i = 0; i < processedData.length - 1; i++) {
+        processedData[i].pre_close = processedData[i + 1].close;
+      }
+
+      return processedData;
+    }
+
+    // ================= 核心重构：多周期加载与合并算法 =================
+    async function loadData() {
+      const code = normalizeCode(el.code.value);
+      const { start, end } = normalizeDateRangeInputs();
+      const frequency = el.frequency.value;
+
+      if (!isValidCode(code)) {
+        setMessage("代码需要是 6 位数字。", "error");
+        return;
+      }
+
+      // 1. 处理分钟级时间戳的补全
+      let queryStart = start;
+      let queryEnd = end;
+      const isMinFreq = ["1m", "5m", "15m", "30m", "60m"].indexOf(frequency) !== -1;
+      if (isMinFreq) {
+        if (queryStart && queryStart.length === 8) {
+          // 如果是分钟级查询，且只输入了开始日期（8位），则自动将结束时间设为当天的最后一分钟，拉取整天分钟线
+          if (!queryEnd) {
+            queryEnd = queryStart + "235959";
+          }
+          queryStart += "000000";
+        }
+        if (queryEnd && queryEnd.length === 8) {
+          queryEnd += "235959";
+        }
+      }
+
+      // 2. 核心优化：对于日K/周K/月K等周期，我们默默将开始日期往前多拉一个交易日
+      // 这样在做 pre_close 昨日价格对齐覆盖时，最老的那天数据就有昨日 close 可供完美对齐，避开了数据库二次复权 Bug。
+      let actualStart = queryStart;
+      let hasExtraDay = false;
+      if (!isMinFreq && queryStart && state.dates && state.dates.length > 0) {
+        let idx = state.dates.indexOf(queryStart);
+        if (idx !== -1 && idx + 1 < state.dates.length) {
+          actualStart = state.dates[idx + 1];
+          hasExtraDay = true;
+        }
+      }
+
+      // 3. 构造查询 k2
+      let k2 = "all:";
+      if (actualStart && queryEnd) {
+        k2 = `fwd:${actualStart},${queryEnd}`;
+      } else if (actualStart) {
+        // 如果是单日查询且多要了一天，为了返回前一交易日以便对齐，这里退化为 fwd 区间查询
+        k2 = hasExtraDay ? `fwd:${actualStart},${queryStart}` : `key:${actualStart}`;
+      }
+
+      const table = isMinFreq ? "分钟k" : "日k";
+      const requestParams = { cmd: "vals", t: table, k1: `key:${code}`, k2: k2 };
+      const useLatestRows = !queryStart && !queryEnd;
+      if (useLatestRows) {
+        requestParams.k2 = "all:";
+        requestParams.num = "-100";
+      }
+
+      el.read.disabled = true;
+      el.export.disabled = true;
+      setMessage("正在向本地数据库获取数据...");
+      try {
+        let data = await requestJson(requestParams);
+        
+        // 客户端内存动态前复权 / 后复权折算
+        const fqMode = el.fq.value;
+        if (fqMode !== "none" && data && data.length > 0) {
+          try {
+            // cmd=get 多条返回 [key, value]，单条只返回 value；单条时用 cmd=keys 补出日期。
+            const factors = await loadFqFactors(code);
+            data = _applyFqInJs(data, factors, fqMode);
+          } catch (fqErr) {
+            console.error("加载复权因子失败，将使用原始不复权价格展示:", fqErr);
+          }
+        } else if (fqMode === "none" && data && data.length > 0) {
+          // 不复权情况下，依然需要把 pre_close 对齐昨日收盘（洗去数据库原有脏数据）
+          data = _applyFqInJs(data, null, "none");
+        }
+
+        // 4. 对齐覆盖完毕后，将多拉出的前一交易日裁切掉
+        if (hasExtraDay && data && data.length > 0) {
+          data = data.filter(item => {
+            let itemDateStr = String(item.date || "");
+            return parseInt(itemDateStr.substring(0, 8)) >= parseInt(queryStart);
+          });
+        }
+        
+        // 3. 剔除 None 空值
+        if (data && Array.isArray(data)) {
+          data = data.filter(item => item !== null && typeof item === 'object');
+        } else {
+          data = [];
+        }
+
+        if (data.length === 0) {
+          state.currentData = [];
+          renderTable([]);
+          setMessage("数据库中未查询到有效记录。", "error");
+          return;
+        }
+
+        // 4. 在客户端运行对齐与周期聚合逻辑
+        let processed = [];
+        if (frequency === "1w" || frequency === "1M") {
+          processed = _mergeToPeriod(data, frequency);
+        } else if (["5m", "15m", "30m", "60m"].indexOf(frequency) !== -1) {
+          processed = _mergeMinutesToPeriod(data, frequency);
+        } else {
+          processed = data.sort((a, b) => (a.date || 0) - (b.date || 0));
+        }
+
+        // 统一按日期时间从大到小（降序）排序，优先展示最新行情
+        processed.sort((a, b) => (b.date || 0) - (a.date || 0));
+
+        // 缓存数据
+        state.currentData = processed;
+
+        // 5. 渲染表格
+        const rows = parseRows(processed);
+        el.title.textContent = useLatestRows
+          ? `${code} [${frequency}] 最近 100 条`
+          : `${code} [${frequency}] ${displayDate(start)} 至 ${displayDate(end || start)}`;
+        renderTable(rows);
+        setMessage("数据载入并合并成功！", "ok");
+        el.export.disabled = false;
+      } catch (err) {
+        state.currentData = [];
+        renderTable([]);
+        setMessage(`数据加载或合并失败：${err.message}`, "error");
+      } finally {
+        el.read.disabled = false;
+      }
+    }
+
+    // ================= 客户端 CSV 导出功能 =================
+    function exportToCsv() {
+      if (!state.currentData || state.currentData.length === 0) {
+        setMessage("无数据可供导出。", "error");
+        return;
+      }
+
+      const frequency = el.frequency.value;
+      const code = normalizeCode(el.code.value);
+      const { start, end } = normalizeDateRangeInputs();
+
+      let csvContent = "";
+      const columns = [];
+      const headers = [];
+
+      for (const col of FIELD_ORDER) {
+        if (state.currentData.some(row => Object.prototype.hasOwnProperty.call(row, col))) {
+          columns.push(col);
+          headers.push(FIELD_LABELS[col] || col);
+        }
+      }
+
+      // 写入表头
+      csvContent += headers.join(",") + "\r\n";
+
+      // 写入行数据
+      for (const item of state.currentData) {
+        const rowValues = columns.map(col => {
+          let val = item[col];
+          if (val == null) return "";
+          val = String(val).replace(/"/g, '""'); // 转义双引号
+          if (val.includes(",") || val.includes("\n") || val.includes('"')) {
+            val = `"${val}"`; // 包含逗号等则包裹
+          }
+          return val;
+        });
+        csvContent += rowValues.join(",") + "\r\n";
+      }
+
+      // 加入 UTF-8 BOM，防止 Excel 乱码
+      const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${code}_${frequency}_${start}_to_${end || start}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setMessage("已成功导出并下载 CSV 表格！", "ok");
+    }
+
+    // ================= 聚合合成算法的 JS 实现 =================
+    function _mergeToPeriod(dailyData, frequency) {
+      let sorted = dailyData.sort((a, b) => (a.date || 0) - (b.date || 0));
+      let groups = {};
+      let groupKeys = [];
+
+      for (let item of sorted) {
+        let dateVal = item.date;
+        if (!dateVal) continue;
+        let dateStr = String(dateVal);
+        
+        let year = parseInt(dateStr.substring(0, 4));
+        let month = parseInt(dateStr.substring(4, 6));
+        let day = parseInt(dateStr.substring(6, 8));
+        let dt = new Date(year, month - 1, day);
+
+        let key = "";
+        if (frequency === "1w") {
+          let iso = _getISOWeek(dt);
+          key = iso[0] + "_W" + String(iso[1]).padStart(2, '0');
+        } else {
+          key = String(year) + "_M" + String(month).padStart(2, '0');
+        }
+
+        if (!groups[key]) {
+          groups[key] = [];
+          groupKeys.push(key);
+        }
+        groups[key].push(item);
+      }
+
+      let mergedList = [];
+      for (let i = 0; i < groupKeys.length; i++) {
+        let key = groupKeys[i];
+        let items = groups[key];
+        let first = items[0];
+        let last = items[items.length - 1];
+
+        let high = Math.max(...items.map(x => x.high || 0));
+        let low = Math.min(...items.map(x => x.low || 999999));
+        let volume = items.map(x => x.volume || 0).reduce((a, b) => a + b, 0);
+        let amount = items.map(x => x.amount || 0).reduce((a, b) => a + b, 0);
+
+        let mergedItem = {
+          date: last.date,
+          code: last.code,
+          name: last.name || "",
+          open: first.open,
+          high: high,
+          low: low,
+          close: last.close,
+          volume: volume,
+          amount: amount
+        };
+
+        let pre_close = 0;
+        if (i > 0) {
+          pre_close = mergedList[i - 1].close;
+        } else {
+          pre_close = first.pre_close || first.open;
+        }
+        mergedItem.pre_close = pre_close;
+
+        if (pre_close) {
+          mergedItem.pct_chg = Math.round(((mergedItem.close - pre_close) / pre_close) * 100000) / 1000;
+          mergedItem.amplitude = Math.round(((high - low) / pre_close) * 100000) / 1000;
+        } else {
+          mergedItem.pct_chg = 0;
+          mergedItem.amplitude = 0;
+        }
+
+        if (last.turnover !== undefined) {
+          mergedItem.turnover = Math.round(items.map(x => x.turnover || 0).reduce((a, b) => a + b, 0) * 1000) / 1000;
+        }
+        if (last.vol_ratio !== undefined) {
+          mergedItem.vol_ratio = Math.round((items.map(x => x.vol_ratio || 0).reduce((a, b) => a + b, 0) / items.length) * 1000) / 1000;
+        }
+
+        let fieldsToCopy = ['pe_ttm', 'pb', 'total_mv', 'float_mv', 'float_share', 'total_share', 'is_st'];
+        for (let f of fieldsToCopy) {
+          if (last[f] !== undefined) mergedItem[f] = last[f];
+        }
+
+        mergedList.push(mergedItem);
+      }
+      return mergedList;
+    }
+
+    function _mergeMinutesToPeriod(minuteData, frequency) {
+      let sorted = minuteData.sort((a, b) => (a.date || 0) - (b.date || 0));
+      let interval = parseInt(frequency.replace("m", ""));
+      let groups = {};
+      let groupKeys = [];
+
+      for (let item of sorted) {
+        let dateVal = item.date;
+        if (!dateVal) continue;
+        let dateStr = String(dateVal);
+        if (dateStr.length < 14) continue;
+
+        let year = dateStr.substring(0, 4);
+        let month = dateStr.substring(4, 6);
+        let day = dateStr.substring(6, 8);
+        let hour = parseInt(dateStr.substring(8, 10));
+        let minute = parseInt(dateStr.substring(10, 12));
+
+        let totalMinutes = hour * 60 + minute;
+        let groupIdx = Math.floor((totalMinutes - 1) / interval);
+        let groupEndMins = (groupIdx + 1) * interval;
+
+        let key = year + month + day + "_" + groupEndMins;
+        if (!groups[key]) {
+          groups[key] = [];
+          groupKeys.push(key);
+        }
+        groups[key].push(item);
+      }
+
+      let mergedList = [];
+      for (let i = 0; i < groupKeys.length; i++) {
+        let key = groupKeys[i];
+        let items = groups[key];
+        let first = items[0];
+        let last = items[items.length - 1];
+
+        let high = Math.max(...items.map(x => x.high || 0));
+        let low = Math.min(...items.map(x => x.low || 999999));
+        let volume = items.map(x => x.volume || 0).reduce((a, b) => a + b, 0);
+        let amount = items.map(x => x.amount || 0).reduce((a, b) => a + b, 0);
+
+        let parts = key.split("_");
+        let datePart = parts[0];
+        let endMins = parseInt(parts[1]);
+        let endHour = Math.floor(endMins / 60);
+        let endMin = endMins % 60;
+        if (endHour >= 24) { endHour = 23; endMin = 59; }
+
+        let alignedDate = parseInt(datePart + String(endHour).padStart(2, '0') + String(endMin).padStart(2, '0') + "00");
+
+        let mergedItem = {
+          date: alignedDate,
+          code: last.code,
+          name: last.name || "",
+          open: first.open,
+          high: high,
+          low: low,
+          close: last.close,
+          volume: volume,
+          amount: amount
+        };
+
+        let pre_close = 0;
+        if (i > 0) {
+          pre_close = mergedList[i - 1].close;
+        } else {
+          pre_close = first.pre_close || first.open;
+        }
+        mergedItem.pre_close = pre_close;
+
+        if (pre_close) {
+          mergedItem.pct_chg = Math.round(((mergedItem.close - pre_close) / pre_close) * 100000) / 1000;
+          mergedItem.amplitude = Math.round(((high - low) / pre_close) * 100000) / 1000;
+        } else {
+          mergedItem.pct_chg = 0;
+          mergedItem.amplitude = 0;
+        }
+
+        let fieldsToCopy = ['vol_ratio', 'pe_ttm', 'pb', 'total_mv', 'float_mv', 'float_share', 'total_share', 'is_st'];
+        for (let f of fieldsToCopy) {
+          if (last[f] !== undefined) mergedItem[f] = last[f];
+        }
+
+        mergedList.push(mergedItem);
+      }
+      return mergedList;
+    }
+
+    function _getISOWeek(date) {
+      let d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      let dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      let yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      let weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return [d.getUTCFullYear(), weekNo];
+    }
+
+    // ================= 事件绑定 =================
+    const triggerDateInputLoad = debounce(input => {
+      const code = normalizeCode(el.code.value);
+      const start = normalizeDate(el.start.value);
+      const endDigits = normalizeDateQuery(el.end.value);
+      if (!isValidCode(code)) return;
+      if (!start) return;
+      if (endDigits && endDigits.length < 8) return;
+      loadData();
+    });
+
+    const triggerCodeInputLoad = debounce(() => {
+      const code = normalizeCode(el.code.value);
+      if (!isValidCode(code)) return;
+      loadData();
+    });
+
+    bindSuggest({
+      input: el.code,
+      box: el.codeSuggest,
+      getOptions: () => state.codes,
+      normalizeInput: normalizeCodeSuggestQuery,
+      formatOption: code => code,
+      onInput: raw => {
+        const code = normalizeCode(raw);
+        if (isValidCode(code)) {
+          loadDatesForCode(code);
+          triggerCodeInputLoad();
+        }
+      },
+      onPick: code => {
+        el.code.value = code;
+        loadDatesForCode(code);
+        loadData();
+      }
+    });
+
+    for (const [input, box] of [[el.start, el.startSuggest], [el.end, el.endSuggest]]) {
+      bindSuggest({
+        input,
+        box,
+        getOptions: () => state.dates,
+        normalizeInput: normalizeDateSuggestQuery,
+        formatOption: displayDate,
+        onInput: () => triggerDateInputLoad(input),
+        onPick: date => {
+          input.value = displayDate(date);
+          loadData();
+        }
+      });
+    }
+
+    el.start.addEventListener("blur", normalizeDateRangeInputs);
+    el.end.addEventListener("blur", normalizeDateRangeInputs);
+
+    el.code.addEventListener("blur", () => {
+      const code = normalizeCode(el.code.value);
+      el.code.value = code;
+      if (isValidCode(code)) loadDatesForCode(code);
+      if (isValidCode(code)) loadData();
+    });
+
+    el.read.addEventListener("click", loadData);
+    el.export.addEventListener("click", exportToCsv);
+    el.fq.addEventListener("change", loadData);
+    el.frequency.addEventListener("change", loadData);
+
+    document.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        loadData();
+      }
+    });
+
+    initCodes();
+  </script>
+</body>
+</html>
