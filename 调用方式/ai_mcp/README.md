@@ -34,7 +34,7 @@
 > **注意**：
 > 1. 请确认配置中的 `python` 可以在您的系统环境变量（PATH）中被直接调用。若不行，可替换为具体的 Python 绝对路径（例如 `C:/Users/用户名/miniconda3/python.exe`）。
 > 2. 请确认本地 `stockdb.exe` 数据库服务已经在后台开启运行（监听 `7899` 端口）。
-
+> 3. 调用前提: native_mcp.py依赖在pybao目录，先运行../../pybao/安装.py ->将依赖写入python目录的pybao.pth，才能导入模块。
 ---
 
 ## 3. 测试与日常对话调用
