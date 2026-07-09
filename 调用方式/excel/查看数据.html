@@ -744,8 +744,16 @@
     function _applyFqInJs(data, rawFactors, fqMode) {
       if (!data || data.length === 0) return data;
 
-      // 1. 克隆数据，防污染原始变量
-      let processedData = data.map(item => ({ ...item }));
+      // 1. 克隆数据，防污染原始变量。先剔除接口返回的 null/空行情行，避免后续只补出 pre_close。
+      let processedData = data
+        .filter(item => item
+          && typeof item === 'object'
+          && !Array.isArray(item)
+          && item.date !== undefined
+          && item.date !== null
+          && item.close !== undefined
+          && item.close !== null)
+        .map(item => ({ ...item }));
 
       // 2. 如果不是不复权，先执行除 pre_close 以外的价格字段的复权折算
       if (fqMode !== "none") {
