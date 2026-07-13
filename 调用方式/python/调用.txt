@@ -8,7 +8,8 @@
         stock_sdk.py        -->成品调用sdk
 
 4、
-
+    （进阶）板块及指标：
+        zb_test.py
     （进阶,非必要）原生：
         rd_test.py
      （进阶,非必要）http_api：
