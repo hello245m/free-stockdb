@@ -1105,6 +1105,28 @@
       let groups = {};
       let groupKeys = [];
 
+      function minuteToTradingIndex(totalMinutes) {
+        const morningStart = 9 * 60 + 30;
+        const morningEnd = 11 * 60 + 30;
+        const afternoonStart = 13 * 60;
+        const afternoonEnd = 15 * 60;
+
+        if (totalMinutes >= morningStart && totalMinutes <= morningEnd) {
+          return Math.max(1, totalMinutes - morningStart);
+        }
+        if (totalMinutes >= afternoonStart && totalMinutes <= afternoonEnd) {
+          return Math.max(121, 120 + totalMinutes - afternoonStart);
+        }
+        return null;
+      }
+
+      function tradingIndexToClockMinutes(tradingMinute) {
+        if (tradingMinute <= 120) {
+          return 9 * 60 + 30 + tradingMinute;
+        }
+        return 13 * 60 + (tradingMinute - 120);
+      }
+
       for (let item of sorted) {
         let dateVal = item.date;
         if (!dateVal) continue;
@@ -1118,8 +1140,10 @@
         let minute = parseInt(dateStr.substring(10, 12));
 
         let totalMinutes = hour * 60 + minute;
-        let groupIdx = Math.floor((totalMinutes - 1) / interval);
-        let groupEndMins = (groupIdx + 1) * interval;
+        let tradingMinute = minuteToTradingIndex(totalMinutes);
+        if (tradingMinute === null) continue;
+        let groupIdx = Math.floor((tradingMinute - 1) / interval);
+        let groupEndMins = tradingIndexToClockMinutes(Math.min((groupIdx + 1) * interval, 240));
 
         let key = year + month + day + "_" + groupEndMins;
         if (!groups[key]) {
