@@ -9,8 +9,8 @@ def main():
     #查询get_data:
     k = client.get_data(
         hs, 
-        start="20260627", 
-        end="20260630", 
+        start="20260713", 
+        end="202600715", 
         frequency="1d", 
         fields='date,close,open',
         fq="qfq"

@@ -167,35 +167,53 @@ class StockDBClient:
         merged_list = []
         sorted_keys = sorted(grouped.keys())
 
-        for idx, key in enumerate(sorted_keys):
+        for key in sorted_keys:
             items = grouped[key]
             first_item = items[0]
             last_item = items[-1]
 
-            high = max(x['high'] for x in items if 'high' in x)
-            low = min(x['low'] for x in items if 'low' in x)
-            volume = sum(x['volume'] for x in items if 'volume' in x)
-            amount = sum(x['amount'] for x in items if 'amount' in x)
+            # None 表示该日该字段没有有效观测值，不能当作 0 参与聚合。
+            # 停牌日通常不会写入记录；这里同时兼容偶发的不完整日 K 记录。
+            def valid_values(field: str) -> List[Any]:
+                return [x[field] for x in items if x.get(field) is not None]
+
+            open_values = valid_values('open')
+            high_values = valid_values('high')
+            low_values = valid_values('low')
+            close_values = valid_values('close')
+
+            # 没有可用的 OHLC 数据时，无法构成可信的周期 K 线。
+            if not (open_values and high_values and low_values and close_values):
+                continue
+
+            high = max(high_values)
+            low = min(low_values)
+            volume_values = valid_values('volume')
+            amount_values = valid_values('amount')
+            volume = sum(volume_values) if volume_values else None
+            amount = sum(amount_values) if amount_values else None
 
             # 基础周期K线数据
             merged_item = {
                 'date': last_item['date'],  # 以该周期内最后一个交易日日期作为标识
                 'code': last_item['code'],
                 'name': last_item.get('name', ''),
-                'open': first_item['open'],
+                'open': open_values[0],
                 'high': high,
                 'low': low,
-                'close': last_item['close'],
+                'close': close_values[-1],
                 'volume': volume,
                 'amount': amount,
             }
 
             # 4. 衍生财务与行情指标处理
             # 前收盘价 pre_close 处理
-            if idx > 0:
+            if merged_list:
                 pre_close = merged_list[-1]['close']
             else:
-                pre_close = first_item.get('pre_close', first_item['open'])
+                pre_close = first_item.get('pre_close')
+                if pre_close is None:
+                    pre_close = open_values[0]
             merged_item['pre_close'] = pre_close
 
             # 涨跌幅与振幅计算
@@ -207,12 +225,14 @@ class StockDBClient:
                 merged_item['amplitude'] = 0.0
 
             # 换手率加和
-            if 'turnover' in last_item:
-                merged_item['turnover'] = round(sum(x.get('turnover', 0) for x in items), 3)
+            turnover_values = valid_values('turnover')
+            if turnover_values:
+                merged_item['turnover'] = round(sum(turnover_values), 3)
 
             # 量比求均值
-            if 'vol_ratio' in last_item:
-                merged_item['vol_ratio'] = round(sum(x.get('vol_ratio', 0) for x in items) / len(items), 3)
+            vol_ratio_values = valid_values('vol_ratio')
+            if vol_ratio_values:
+                merged_item['vol_ratio'] = round(sum(vol_ratio_values) / len(vol_ratio_values), 3)
 
             # 复制周期末端的截面属性（如市值、ST状态等）
             for field in ['pe_ttm', 'pb', 'total_mv', 'float_mv', 'float_share', 'total_share', 'is_st']:
