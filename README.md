@@ -6,6 +6,8 @@
 
 **双击更新 -> 双击启动 -> 直接调用。**
 
+![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83.png)
+
 **🚀️1、你将获得:**
 
 |原生 | 双击启动后直接获得 |
@@ -75,8 +77,6 @@ result = bk.get(
 | Excel / WPS 宏 | 表格分析、选股和办公自动化 |
 | HTML 成品页面 | 无代码查看和筛选本地数据 |
 | AI MCP | Claude、Cursor 等 AI 直接查询、计算和分析 |
-
-![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83.png)
 
 
 **🚀️ 日线+分钟线数据，2000年到2026-07-15 最全历史+最新数据，含7000+股票**
