@@ -8,6 +8,10 @@
 
 **❤️双击更新 -> 双击启动 -> 直接调用。**
 
+[下载地址1](https://github.com/hello245m/free-stockdb/archive/refs/heads/main.zip)
+
+[下载地址2](https://github.com/hello245m/free-stockdb/archive/refs/heads/main.zip)
+
 **🚀️1、你将获得:**
 
 |原生 | 双击启动后直接获得 |
@@ -84,10 +88,6 @@ result = bk.get(
 **🚀️ 总计 1.1亿条数据.1 分钟分时，5 分钟分时，15 分钟分时，30 分钟分时 。包含日k ，周k ，月k**
 
 **🚀️ 无需注册+无需登录+无需token验证+本地数据+不限并发+免费下载+开箱即用+零延迟请求+5种调用方式**
-
-[下载地址1](https://github.com/hello245m/free-stockdb/archive/refs/heads/main.zip)
-
-[下载地址2](https://github.com/hello245m/free-stockdb/archive/refs/heads/main.zip)
 
 ---
 
