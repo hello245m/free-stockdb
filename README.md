@@ -4,7 +4,7 @@
 
 **❤️直接交付一套已搭好的、本地可运行的量化数据生产与计算工作流。核心程序2.2M，无外部pip/dll/数据库依赖。**
 
-**双击更新 -> 双击启动 -> 直接调用。**
+**❤️双击更新 -> 双击启动 -> 直接调用。**
 
 ![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83.png)
 
