@@ -1,12 +1,12 @@
 升级说明：今日收盘出现200GB流量涌入，高峰已验证 ，现升级多级缓存，下载更新更稳定。
 
+![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83.png)
+
 **❤️free-stockdb：一键启动的“本地量化数据引擎”成品解决方案。**
 
 **❤️直接交付一套已搭好的、本地可运行的量化数据生产与计算工作流。核心程序2.2M，无外部pip/dll/数据库依赖。**
 
 **❤️双击更新 -> 双击启动 -> 直接调用。**
-
-![Image text](https://github.com/hello245m/free-stockdb/blob/main/%E7%BD%91%E9%A1%B5%E7%89%88%E7%A4%BA%E8%8C%83.png)
 
 **🚀️1、你将获得:**
 
