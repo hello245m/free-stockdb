@@ -1,0 +1,11 @@
+# 数据更新同步源配置文件
+#
+# 第一条非注释、非空白行即为数据镜像根目录。同步器会读取该目录下的
+# manifest.txt，并按清单将文件同步至 ./data。
+# 清单格式、校验规则和安全建议：docs/DATA_SOURCE.md
+#
+# 示例（请仅使用你信任的镜像）：
+# https://data.example.com/stockdb
+# http://192.168.1.5:1234/stockdb
+# file:///C:/stockdb-mirror
+# C:/stockdb-mirror
