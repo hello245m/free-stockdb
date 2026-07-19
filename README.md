@@ -55,7 +55,7 @@ flowchart TB
 
 ## 两分钟开始
 
-Windows 使用者可从 [Releases](../../releases) 下载发行包。首次运行：
+Windows 使用者可从 [Releases](https://github.com/hello245m/free-stockdb/releases/download/%E6%B5%8B%E8%AF%95%E7%89%88%E6%9C%AC0.2.0/free-stockdb-windows-v0.2.0.zip) 下载发行包。首次运行：
 
 ```text
 1. 运行数据更新工具
