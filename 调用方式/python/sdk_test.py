@@ -10,7 +10,7 @@ def main():
     k = client.get_data(
         hs, 
         start="20260713", 
-        end="202600715", 
+        end="20260715", 
         frequency="1d", 
         fields='date,close,open',
         fq="qfq"
