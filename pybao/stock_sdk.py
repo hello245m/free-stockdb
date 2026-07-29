@@ -56,7 +56,8 @@ class StockDBClient:
         if start and (not end or start == end):
             return start
             
-        op = ">" if desc else "<"
+        # rd 范围查询语义: "<" 返回降序, ">" 返回升序
+        op = "<" if desc else ">"
         s_val = start if start else "N"
         e_val = end if end else "N"
         
@@ -132,7 +133,7 @@ class StockDBClient:
         if not daily_data:
             return []
 
-        # LevelDB 天然按日期升序，无需排序
+        # 上游查询方向已修正(见 _build_time_query),输入按日期升序,无需排序
         sorted_daily = daily_data
 
         # 2. 分组归类
@@ -250,7 +251,7 @@ class StockDBClient:
         if not minute_data:
             return []
 
-        # LevelDB 天然按时间升序，无需排序
+        # 上游查询方向已修正(见 _build_time_query),输入按时间升序,无需排序
         sorted_min = minute_data
         
         interval = int(frequency[:-1]) # '5m' -> 5, '15m' -> 15, '30m' -> 30, '60m' -> 60
@@ -481,14 +482,12 @@ class StockDBClient:
             elif frequency in ('5m', '15m', '30m', '60m'):
                 records = self._merge_minutes_to_period(records, frequency)
             
-            # LevelDB 天然有序，仅在需要降序时反转
-            if desc:
-                records = records[::-1]
-            
+            # 查询方向已与 desc 语义一致(rd: ">" 升序, "<" 降序),无需反转
+
             # 限额截取
             if limit is not None:
                 records = records[:limit]
-                
+
             # 字段投影过滤
             if fields:
                 records = self._filter_fields(records, fields)
@@ -564,9 +563,8 @@ class StockDBClient:
             elif frequency in ('5m', '15m', '30m', '60m'):
                 records = self._merge_minutes_to_period(records, frequency)
                 
-            if desc:
-                records = records[::-1]
-            
+            # 查询方向已与 desc 语义一致,无需反转
+
             if limit is not None:
                 records = records[:limit]
                 
