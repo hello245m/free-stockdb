@@ -131,6 +131,38 @@ public:
 };
 
 // ---------------------------------------------------------------------------
+// URL decode utility (fix P0: raw %XX and + in query params were passed through)
+// ---------------------------------------------------------------------------
+static int from_hex(char ch) {
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    return -1;
+}
+
+static std::string url_decode(const std::string& str) {
+    std::string result;
+    result.reserve(str.size());
+    for (size_t i = 0; i < str.size(); ++i) {
+        if (str[i] == '%' && i + 2 < str.size()) {
+            int hi = from_hex(str[i + 1]);
+            int lo = from_hex(str[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                result += static_cast<char>((hi << 4) | lo);
+                i += 2;
+            } else {
+                result += str[i];
+            }
+        } else if (str[i] == '+') {
+            result += ' ';
+        } else {
+            result += str[i];
+        }
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Server 实现
 // ---------------------------------------------------------------------------
 class StockDbServerImpl {
@@ -267,10 +299,10 @@ private:
         }
 
         const std::string& cmd = params["cmd"];
-        if (cmd == "get")    return process_cmd_get(params["t"]);
-        if (cmd == "set")    return process_cmd_set(params["key"], params["val"]);
-        if (cmd == "zb.get") return process_zb_get(params["name"], params["codes"], params["start"], params["end"]);
-        if (cmd == "bk.get") return process_bk_get(params["x"], params["category"]);
+        if (cmd == "get")    return process_cmd_get(url_decode(params["t"]));
+        if (cmd == "set")    return process_cmd_set(url_decode(params["key"]), url_decode(params["val"]));
+        if (cmd == "zb.get") return process_zb_get(url_decode(params["name"]), url_decode(params["codes"]), url_decode(params["start"]), url_decode(params["end"]));
+        if (cmd == "bk.get") return process_bk_get(url_decode(params["x"]), url_decode(params["category"]));
 
         return "{\"status\":\"ok\",\"engine\":\"StockDB/LevelDB\"}";
     }
