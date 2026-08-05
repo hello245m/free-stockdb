@@ -228,25 +228,40 @@ private:
             int cfd = accept(listen_fd, (struct sockaddr*)&ca, &cl);
             if (cfd < 0) { if (!running.load()) break; continue; }
 #endif
-            char buf[8192] = {0};
-            int n = recv(cfd, buf, sizeof(buf) - 1, 0);
-            if (n > 0) {
-                std::string body = route(std::string(buf, n));
-                std::ostringstream resp;
-                resp << "HTTP/1.1 200 OK\r\n"
-                     << "Content-Type: application/json; charset=utf-8\r\n"
-                     << "Access-Control-Allow-Origin: *\r\n"
-                     << "Content-Length: " << body.size() << "\r\n"
-                     << "Connection: close\r\n\r\n" << body;
-                std::string r = resp.str();
-                send(cfd, r.c_str(), static_cast<int>(r.size()), 0);
-            }
-#ifdef _WIN32
-            closesocket(cfd);
-#else
-            close(cfd);
-#endif
+            // thread-per-connection: each accepted connection gets its own
+            // detached worker, so a slow request no longer blocks the accept
+            // loop. During stop(), cleanup_socket() breaks accept(); detached
+            // workers finish their current request and self-destruct.
+            std::thread worker(&StockDbServerImpl::handle_connection, this, cfd);
+            worker.detach();
         }
+    }
+
+    void handle_connection(
+#ifdef _WIN32
+        SOCKET cfd
+#else
+        int cfd
+#endif
+    ) {
+        char buf[8192] = {0};
+        int n = recv(cfd, buf, sizeof(buf) - 1, 0);
+        if (n > 0) {
+            std::string body = route(std::string(buf, n));
+            std::ostringstream resp;
+            resp << "HTTP/1.1 200 OK\r\n"
+                 << "Content-Type: application/json; charset=utf-8\r\n"
+                 << "Access-Control-Allow-Origin: *\r\n"
+                 << "Content-Length: " << body.size() << "\r\n"
+                 << "Connection: close\r\n\r\n" << body;
+            std::string r = resp.str();
+            send(cfd, r.c_str(), static_cast<int>(r.size()), 0);
+        }
+#ifdef _WIN32
+        closesocket(cfd);
+#else
+        close(cfd);
+#endif
     }
 
     std::string route(const std::string& raw) {
