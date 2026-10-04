@@ -9,7 +9,7 @@
 **❤️双击更新 -> 双击启动 -> 直接调用。**
 
 
-[下载地址1](http://143300055)
+[下载地址1](http://1783355894)
 
 [下载地址2](https://github.com/hello245m/free-stockdb/releases/tag/测试版本0.3.5)
 
