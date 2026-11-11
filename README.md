@@ -1,5 +1,3 @@
-![双击启动演示动画](https://github.com/user-attachments/assets/7cb13392-10ad-4b71-90bf-97206acb3133)
-
 [08-10]windows，macos，alpine，manylinux版本已发布。[08-04]mac，linux版本完成，已通过多轮压力测试，即将发布。
 
 # free-stockdb
@@ -15,7 +13,7 @@
 
 [下载地址2](https://github.com/hello245m/free-stockdb/releases/tag/测试版本0.3.5)
 
-
+![双击启动演示动画](https://github.com/user-attachments/assets/7cb13392-10ad-4b71-90bf-97206acb3133)
 
 数据本地落盘，研究不再依赖远程接口。
 
