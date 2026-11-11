@@ -1,4 +1,4 @@
-![双击启动演示](https://github.com/user-attachments/assets/746537b4-c74d-4963-84c4-d7a3dcd83daf)
+![双击启动演示动画](https://github.com/user-attachments/assets/7cb13392-10ad-4b71-90bf-97206acb3133)
 
 [08-10]windows，macos，alpine，manylinux版本已发布。[08-04]mac，linux版本完成，已通过多轮压力测试，即将发布。
 
