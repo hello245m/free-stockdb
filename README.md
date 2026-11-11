@@ -1,3 +1,5 @@
+![双击启动演示](https://github.com/user-attachments/assets/746537b4-c74d-4963-84c4-d7a3dcd83daf)
+
 [08-10]windows，macos，alpine，manylinux版本已发布。[08-04]mac，linux版本完成，已通过多轮压力测试，即将发布。
 
 # free-stockdb
